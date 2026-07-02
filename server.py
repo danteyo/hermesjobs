@@ -23,6 +23,153 @@ CRON_JOBS_FILE = HERMES_DIR / "cron" / "jobs.json"
 DAEMON_SCRIPT = HERMES_DIR / "scripts" / "ha_ws_daemon.py"
 
 # ─── Cron Jobs ────────────────────────────────────────────────────────────────
+def describe_cron_schedule(schedule):
+    """把 cron 表达式或调度配置转成人类可读的中文描述。
+
+    支持的输入：
+      - 字符串：标准 5 段 cron 表达式，如 "0 8 * * *"、"*/30 * * * *"
+      - dict：{"expr": "..."} 或 {"display": "..."} 或 {"schedule": "..."}
+    """
+    if not schedule:
+        return "—"
+
+    # dict 形式：优先用 display，其次 expr / schedule 字段
+    if isinstance(schedule, dict):
+        if schedule.get("display"):
+            return schedule["display"]
+        expr = schedule.get("expr") or schedule.get("schedule") or ""
+        if not expr:
+            return "—"
+        return describe_cron_expr(expr)
+
+    if isinstance(schedule, str):
+        return describe_cron_expr(schedule)
+
+    return "—"
+
+
+def describe_cron_expr(expr):
+    """解析标准 5 段 cron 表达式 → 中文可读描述。
+
+    例：
+      "0 8 * * *"      → "每天 08:00"
+      "30 6 * * 1-5"   → "周一至周五 06:30"
+      "*/15 * * * *"   → "每 15 分钟"
+      "0 */2 * * *"    → "每 2 小时"
+    """
+    expr = str(expr).strip()
+    if not expr:
+        return "—"
+
+    parts = expr.split()
+    if len(parts) != 5:
+        # 非 cron 表达式，原样返回
+        return expr
+
+    minute, hour, day, month, weekday = parts
+
+    WEEKDAYS = {"0": "周日", "1": "周一", "2": "周二", "3": "周三",
+                "4": "周四", "5": "周五", "6": "周六", "7": "周日"}
+
+    # ── 高频模式优先 ──
+    # 每分钟
+    if minute == "*" and hour == "*":
+        return "每分钟"
+    # 每 N 分钟
+    if minute.startswith("*/") and hour == "*":
+        return f"每 {minute[2:]} 分钟"
+    # 每 N 小时（整点）
+    if minute == "0" and hour.startswith("*/"):
+        return f"每 {hour[2:]} 小时"
+
+    # ── 时间描述 ──
+    def fmt_time(h, m):
+        try:
+            return f"{int(h):02d}:{int(m):02d}"
+        except (ValueError, TypeError):
+            return f"{h}:{m}"
+
+    # 解析 hour / minute 可能的列表/范围
+    def expand(field, kind="time"):
+        if field == "*":
+            return None  # 通配，不限制
+        if field.startswith("*/"):
+            return f"每 {field[2:]} {kind}"
+        return field
+
+    # 周几描述
+    def weekday_desc(w):
+        if w == "*":
+            return None
+        # 范围，如 1-5
+        if "-" in w:
+            a, b = w.split("-", 1)
+            return f"{WEEKDAYS.get(a, a)}至{WEEKDAYS.get(b, b)}"
+        # 列表，如 1,3,5
+        if "," in w:
+            items = [WEEKDAYS.get(x.strip(), x.strip()) for x in w.split(",")]
+            return "、".join(items)
+        return WEEKDAYS.get(w, w)
+
+    # 日期描述
+    def day_desc(d):
+        if d == "*":
+            return None
+        if d.startswith("*/"):
+            return f"每 {d[2:]} 天"
+        if "," in d:
+            return f"每月 {d} 号"
+        return f"每月 {d} 号"
+
+    # ── 组装 ──
+    # 固定时间点（minute/hour 都是数字或列表）
+    time_desc = ""
+
+    def expand_list(field):
+        """展开 '9,18' → ['9','18']；'1-3' → ['1','2','3']；其它返回 [field]"""
+        if "," in field:
+            return [x.strip() for x in field.split(",")]
+        if "-" in field:
+            a, b = field.split("-", 1)
+            try:
+                return [str(i) for i in range(int(a), int(b) + 1)]
+            except ValueError:
+                return [field]
+        return [field]
+
+    if not minute.startswith("*/") and not hour.startswith("*/"):
+        hours = expand_list(hour)
+        minutes = expand_list(minute)
+        # 笛卡尔积 → 多个时间点
+        times = [fmt_time(h, m) for h in hours for m in minutes]
+        time_desc = "、".join(times)
+    elif minute.startswith("*/") and hour == "*":
+        time_desc = ""  # 已在前面返回
+    elif hour.startswith("*/") and minute == "0":
+        time_desc = ""  # 已在前面返回
+    else:
+        # 混合，原样
+        time_desc = f"{hour}:{minute}".replace("*", "每")
+
+    # 日期部分
+    d = day_desc(day)
+    # 周几部分
+    w = weekday_desc(weekday)
+
+    # 组合：周几/日期在前，时间在后
+    desc_parts = []
+    if w:
+        desc_parts.append(w)
+    if d:
+        desc_parts.append(d)
+    if time_desc:
+        prefix = "" if (w or d) else "每天 "
+        desc_parts.append(f"{prefix}{time_desc}")
+
+    result = " ".join(desc_parts).strip()
+    return result or expr
+
+
 def load_cron_jobs():
     if not CRON_JOBS_FILE.exists():
         return []
@@ -33,7 +180,8 @@ def load_cron_jobs():
     for j in jobs:
         result.append({
             "name":        j.get("name", "?"),
-            "schedule":    j.get("schedule"),
+            "schedule":    describe_cron_schedule(j.get("schedule")),
+            "schedule_raw": j.get("schedule"),
             "last_run_at": j.get("last_run_at"),
             "next_run_at": j.get("next_run_at"),
             "last_status": j.get("last_status"),

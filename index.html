@@ -564,6 +564,7 @@
       }
 
       function scheduleDisplay(sched) {
+        // 后端已将 schedule 转为可读字符串；此处做兜底
         if (!sched) return '—';
         if (typeof sched === 'string') return sched;
         return sched.display || sched.expr || '—';
