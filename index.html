@@ -1,213 +1,584 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hermes Jobs Monitor</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e6e6e6; min-height: 100vh; }
-  .header { background: #1a1d27; border-bottom: 1px solid #2a2d3a; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
-  .header h1 { font-size: 18px; font-weight: 600; color: #fff; }
-  .header .badge { background: #238636; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 12px; }
-  .header .refresh-btn { margin-left: auto; background: #2a2d3a; border: 1px solid #3d4152; color: #e6e6e6; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-  .header .refresh-btn:hover { background: #3d4152; }
-  .header .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hermes Jobs Monitor</title>
+    <style>
+      /* ============ 科技感主题（参考 pointviewer） ============ */
+      :root {
+        color-scheme: dark;
 
-  .stats-bar { display: flex; gap: 12px; padding: 16px 24px; background: #161921; overflow-x: auto; }
-  .stat-card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; padding: 12px 20px; min-width: 120px; text-align: center; }
-  .stat-card .num { font-size: 28px; font-weight: 700; }
-  .stat-card .num.green { color: #3fb950; }
-  .stat-card .num.red { color: #f85149; }
-  .stat-card .num.yellow { color: #d29922; }
-  .stat-card .label { font-size: 12px; color: #8b949e; margin-top: 4px; }
+        --bg: #05070d;
+        --bg-2: #0a0f1c;
+        --panel: rgba(20, 27, 45, 0.55);
 
-  .section { padding: 16px 24px; }
-  .section-title { font-size: 14px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+        --ink: #e8ecf5;
+        --muted: #8b94ad;
+        --soft: #5e6680;
 
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: #8b949e; border-bottom: 1px solid #2a2d3a; }
-  td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #21252b; vertical-align: middle; }
-  tr:hover td { background: #1c1f2a; }
-  tr:last-child td { border-bottom: none; }
+        --line: rgba(120, 140, 200, 0.16);
+        --strong-line: rgba(140, 170, 255, 0.42);
 
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
-  .tag-ok { background: #1a472a; color: #3fb950; }
-  .tag-error { background: #5a1a1a; color: #f85149; }
-  .tag-warn { background: #3d2e00; color: #d29922; }
-  .tag-info { background: #1a2a47; color: #58a6ff; }
-  .tag-unknown { background: #2a2d3a; color: #8b949e; }
+        --accent: #00d9ff;
+        --accent-2: #4f8cff;
+        --accent-glow: rgba(0, 217, 255, 0.45);
 
-  .error-msg { color: #f85149; font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .next-run { color: #8b949e; font-size: 12px; }
+        --pinned: #ff3d8a;
+        --pinned-line: rgba(255, 61, 138, 0.5);
 
-  .daemon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-  .daemon-card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; padding: 14px 16px; }
-  .daemon-card .name { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 6px; }
-  .daemon-card .info { font-size: 12px; color: #8b949e; }
-  .daemon-card .info span { color: #3fb950; }
-  .daemon-card .info span.inactive { color: #f85149; }
+        --danger: #ff4d6a;
+        --success: #2ee6a6;
+        --warn: #d29922;
 
-  .time { font-size: 11px; color: #484f58; }
-  .loading { text-align: center; padding: 40px; color: #8b949e; }
-  .error-banner { background: #5a1a1a; border: 1px solid #f85149; color: #f85149; padding: 12px 24px; margin: 16px 24px; border-radius: 8px; font-size: 13px; }
-</style>
-</head>
-<body>
+        font-family: "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
 
-<div class="header">
-  <h1>🔭 Hermes Jobs Monitor</h1>
-  <span class="badge" id="updateTime">--</span>
-  <button class="refresh-btn" id="refreshBtn" onclick="fetchAll()">⟳ 刷新</button>
-</div>
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      html, body { height: 100%; }
 
-<div class="stats-bar" id="statsBar">
-  <div class="stat-card"><div class="num" id="statTotal">-</div><div class="label">总任务</div></div>
-  <div class="stat-card"><div class="num green" id="statOk">-</div><div class="label">正常</div></div>
-  <div class="stat-card"><div class="num red" id="statError">-</div><div class="label">异常</div></div>
-  <div class="stat-card"><div class="num yellow" id="statWarn">-</div><div class="label">预警</div></div>
-</div>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+        position: relative;
+      }
 
-<div class="section">
-  <div class="section-title">🖥️ 系统服务 & 守护进程</div>
-  <div class="daemon-grid" id="daemonGrid"></div>
-</div>
+      body::before {
+        content: "";
+        position: fixed;
+        inset: -20%;
+        z-index: -2;
+        background:
+          radial-gradient(circle at 18% 22%, rgba(0, 217, 255, 0.12), transparent 42%),
+          radial-gradient(circle at 82% 78%, rgba(255, 61, 138, 0.10), transparent 45%),
+          radial-gradient(circle at 50% 50%, rgba(79, 140, 255, 0.06), transparent 60%),
+          linear-gradient(180deg, #05070d 0%, #0a0f1c 100%);
+        animation: bgDrift 22s ease-in-out infinite alternate;
+      }
 
-<div class="section">
-  <div class="section-title">⏰ 定时任务</div>
-  <table>
-    <thead>
-      <tr>
-        <th>任务名称</th>
-        <th>调度周期</th>
-        <th>推送目标</th>
-        <th>上次执行</th>
-        <th>下次执行</th>
-        <th>状态</th>
-        <th>错误信息</th>
-      </tr>
-    </thead>
-    <tbody id="jobsTable"></tbody>
-  </table>
-</div>
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        background-image:
+          linear-gradient(rgba(120, 140, 200, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(120, 140, 200, 0.04) 1px, transparent 1px);
+        background-size: 48px 48px;
+        mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+        -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+        pointer-events: none;
+      }
 
-<div id="errorBanner" class="error-banner" style="display:none"></div>
+      @keyframes bgDrift {
+        0%   { transform: translate(0, 0) scale(1); }
+        100% { transform: translate(-2%, 2%) scale(1.06); }
+      }
 
-<script>
-const API_BASE = '/api';
-let refreshing = false;
+      button, input { font: inherit; }
 
-async function fetchAll() {
-  if (refreshing) return;
-  refreshing = true;
-  document.getElementById('refreshBtn').disabled = true;
-  try {
-    const [jobsRes, sysRes] = await Promise.all([
-      fetch(`${API_BASE}/jobs`),
-      fetch(`${API_BASE}/system`)
-    ]);
-    const jobs = await jobsRes.json();
-    const sys = await sysRes.json();
-    renderStats(jobs);
-    renderDaemons(sys);
-    renderJobs(jobs);
-    document.getElementById('updateTime').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
-  } catch (e) {
-    showError('数据加载失败: ' + e.message);
-  } finally {
-    refreshing = false;
-    document.getElementById('refreshBtn').disabled = false;
-  }
-}
+      .shell {
+        width: min(1180px, calc(100vw - 44px));
+        margin: 0 auto;
+        padding: 48px 0 72px;
+        position: relative;
+      }
 
-function renderStats(jobs) {
-  const total = jobs.length;
-  const ok = jobs.filter(j => j.last_status === 'ok').length;
-  const error = jobs.filter(j => j.last_status === 'error').length;
-  const warn = jobs.filter(j => j.last_status && j.last_status !== 'ok' && j.last_status !== 'error').length;
-  document.getElementById('statTotal').textContent = total;
-  document.getElementById('statOk').textContent = ok;
-  document.getElementById('statError').textContent = error;
-  document.getElementById('statWarn').textContent = warn;
-}
+      h1, h2, h3, p { margin-top: 0; }
 
-function renderDaemons(sys) {
-  const grid = document.getElementById('daemonGrid');
-  grid.innerHTML = '';
-  for (const [name, info] of Object.entries(sys)) {
-    const div = document.createElement('div');
-    div.className = 'daemon-card';
-    const statusHtml = info.running
-      ? `<span>运行中</span>`
-      : `<span class="inactive">已停止</span>`;
-    div.innerHTML = `
-      <div class="name">${info.desc || name}</div>
-      <div class="info">状态: ${statusHtml} ${info.pid ? '· PID: ' + info.pid : ''}</div>
-    `;
-    grid.appendChild(div);
-  }
-}
+      h1 {
+        margin-bottom: 0;
+        font-size: clamp(40px, 5vw, 60px);
+        line-height: 1.05;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        background: linear-gradient(135deg, #ffffff 0%, #aeb9d6 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
 
-function renderJobs(jobs) {
-  const tbody = document.getElementById('jobsTable');
-  tbody.innerHTML = '';
-  for (const job of jobs) {
-    const tr = document.createElement('tr');
-    const status = job.last_status || 'unknown';
-    const tagClass = status === 'ok' ? 'tag-ok' : status === 'error' ? 'tag-error' : 'tag-unknown';
-    const statusLabel = {ok:'✅ 正常', error:'❌ 失败', unknown:'❓ 未知'}[status] || status;
+      h2 {
+        margin-bottom: 0;
+        font-size: 26px;
+        letter-spacing: -0.01em;
+        line-height: 1.12;
+        font-weight: 750;
+        color: var(--ink);
+      }
 
-    const lastRun = job.last_run_at ? timeAgo(job.last_run_at) : '从未';
-    const nextRun = job.next_run_at ? scheduleDesc(job.next_run_at, job.schedule) : formatTs(job.next_run_at);
+      .kicker {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        text-shadow: 0 0 12px var(--accent-glow);
+      }
 
-    tr.innerHTML = `
-      <td>${job.name}</td>
-      <td><span class="tag tag-info">${scheduleDisplay(job.schedule)}</span></td>
-      <td><span class="tag ${job.deliver === 'local' ? 'tag-ok' : 'tag-warn'}">${job.deliver || '—'}</span></td>
-      <td><span class="time">${lastRun}</span></td>
-      <td><span class="next-run">${nextRun}</span></td>
-      <td><span class="tag ${tagClass}">${statusLabel}</span></td>
-      <td><span class="error-msg" title="${job.last_delivery_error || ''}">${job.last_delivery_error || '—'}</span></td>
-    `;
-    tbody.appendChild(tr);
-  }
-}
+      button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 12px;
+        padding: 0 22px;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+        color: #021018;
+        font-weight: 750;
+        font-size: 14px;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        transition:
+          transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+          box-shadow 0.2s ease,
+          filter 0.2s ease;
+        box-shadow: 0 4px 18px rgba(0, 217, 255, 0.25);
+      }
 
-function showError(msg) {
-  const b = document.getElementById('errorBanner');
-  b.textContent = msg;
-  b.style.display = 'block';
-}
+      button::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
+        transform: translateX(-120%);
+        transition: transform 0.6s ease;
+      }
 
-function formatTs(ts) {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
-}
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(0, 217, 255, 0.4);
+        filter: brightness(1.08);
+      }
 
-function timeAgo(ts) {
-  if (!ts) return '从未';
-  const diff = (Date.now() - new Date(ts).getTime()) / 1000;
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
-  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
-  return Math.floor(diff/86400) + ' 天前';
-}
+      button:hover::after { transform: translateX(120%); }
+      button:active { transform: translateY(0); }
 
-function scheduleDisplay(sched) {
-  if (!sched) return '—';
-  if (typeof sched === 'string') return sched;
-  return sched.display || sched.expr || '—';
-}
+      button:disabled {
+        cursor: wait;
+        opacity: 0.5;
+        transform: none;
+        filter: grayscale(0.4);
+        box-shadow: none;
+      }
 
-function scheduleDesc(nextRun, sched) {
-  return formatTs(nextRun);
-}
+      .ghost {
+        background: rgba(120, 140, 200, 0.06);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        box-shadow: none;
+      }
 
-// Initial load
-fetchAll();
-// Auto-refresh every 30s
-setInterval(fetchAll, 30000);
-</script>
-</body>
+      .ghost:hover {
+        background: rgba(120, 140, 200, 0.12);
+        border-color: var(--strong-line);
+        box-shadow: 0 0 18px rgba(0, 217, 255, 0.12);
+        filter: none;
+      }
+
+      .ghost::after { display: none; }
+
+      /* ============ Topbar ============ */
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 18px;
+        margin-bottom: 44px;
+        animation: fadeDown 0.5s ease both;
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+
+      .refresh-status {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        text-align: right;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        padding: 0 4px;
+      }
+
+      /* ============ 区块 ============ */
+      .metric-section { margin-bottom: 44px; }
+
+      .metric-section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 14px;
+        margin-bottom: 18px;
+        animation: fadeDown 0.4s ease both;
+      }
+
+      .metric-section-head .head-meta {
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.04em;
+      }
+
+      /* ============ 列表容器（玻璃面板） ============ */
+      .list-panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        overflow: hidden;
+        animation: panelIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      /* ============ 列表行 ============ */
+      .row {
+        display: grid;
+        align-items: center;
+        gap: 14px;
+        padding: 16px 22px;
+        border-bottom: 1px solid rgba(120, 140, 200, 0.08);
+        transition: background 0.18s ease;
+      }
+
+      .row:last-child { border-bottom: none; }
+
+      .row:hover { background: rgba(0, 217, 255, 0.04); }
+
+      /* 守护进程行：名称 | 状态 | PID/状态文本 */
+      .row.daemon {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+      }
+
+      /* 任务行：名称 | 周期 | 推送 | 上次 | 下次 | 状态 */
+      .row.job {
+        grid-template-columns: minmax(160px, 1.4fr) auto auto auto auto auto;
+      }
+
+      .row .name {
+        font-weight: 700;
+        color: var(--ink);
+        font-size: 14px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .row .meta {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .row .next-run { color: var(--accent); font-weight: 650; font-size: 12px; }
+      .row .time { color: var(--muted); font-size: 12px; font-weight: 600; }
+      .row .error-msg {
+        color: var(--danger);
+        font-size: 12px;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 600;
+      }
+
+      /* 状态点 */
+      .dot {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-weight: 700;
+        font-size: 12px;
+      }
+
+      .dot::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 10px currentColor;
+      }
+
+      .dot.running { color: var(--success); }
+      .dot.stopped { color: var(--danger); }
+
+      /* 标签 */
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 11px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        border: 1px solid transparent;
+        white-space: nowrap;
+      }
+
+      .tag-ok      { color: var(--success); background: rgba(46, 230, 166, 0.10); border-color: rgba(46, 230, 166, 0.32); }
+      .tag-error   { color: var(--danger);  background: rgba(255, 77, 106, 0.10); border-color: rgba(255, 77, 106, 0.32); }
+      .tag-warn    { color: var(--warn);    background: rgba(210, 153, 34, 0.10); border-color: rgba(210, 153, 34, 0.32); }
+      .tag-info    { color: var(--accent);  background: rgba(0, 217, 255, 0.10); border-color: rgba(0, 217, 255, 0.32); }
+      .tag-unknown { color: var(--muted);   background: rgba(120, 140, 200, 0.08); border-color: var(--line); }
+
+      .empty {
+        padding: 40px 22px;
+        text-align: center;
+        color: var(--soft);
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      /* ============ Toast ============ */
+      .toast-message {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        z-index: 50;
+        max-width: min(720px, calc(100vw - 32px));
+        margin: 0;
+        padding: 12px 18px;
+        border: 1px solid var(--strong-line);
+        border-radius: 12px;
+        background: rgba(10, 15, 28, 0.92);
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 650;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 24px rgba(0, 217, 255, 0.15);
+        backdrop-filter: blur(18px);
+        opacity: 0;
+        pointer-events: none;
+        transform: translate(-50%, -22px);
+        transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      .toast-message.show { opacity: 1; transform: translate(-50%, 0); }
+
+      .toast-message.error {
+        border-color: rgba(255, 77, 106, 0.4);
+        color: var(--danger);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 24px rgba(255, 77, 106, 0.2);
+      }
+
+      /* ============ 动画 ============ */
+      @keyframes panelIn {
+        from { opacity: 0; transform: translateY(16px) scale(0.98); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes fadeDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      /* ============ 响应式 ============ */
+      @media (max-width: 720px) {
+        .shell { width: min(100% - 20px, 1180px); padding: 32px 0 56px; }
+        .topbar { flex-direction: column; align-items: stretch; }
+        .top-actions { justify-content: space-between; }
+        .refresh-status { text-align: left; }
+        h1 { font-size: 34px; }
+
+        .row.daemon { grid-template-columns: minmax(0, 1fr) auto; }
+        .row.job {
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 6px 14px;
+        }
+        .row.job .col-schedule,
+        .row.job .col-deliver,
+        .row.job .col-next { display: none; }
+      }
+
+      /* 滚动条 */
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(120, 140, 200, 0.2); border-radius: 6px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(0, 217, 255, 0.4); }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="kicker">Hermes</p>
+          <h1>任务监控</h1>
+        </div>
+        <div class="top-actions">
+          <p id="updateTime" class="refresh-status">等待加载…</p>
+          <button id="refreshBtn" class="ghost" type="button" onclick="fetchAll()">⟳ 刷新</button>
+        </div>
+      </header>
+
+      <section class="metric-section">
+        <div class="metric-section-head">
+          <div>
+            <p class="kicker">Daemons</p>
+            <h2>系统服务与守护进程</h2>
+          </div>
+        </div>
+        <div class="list-panel" id="daemonList">
+          <div class="empty">加载中…</div>
+        </div>
+      </section>
+
+      <section class="metric-section">
+        <div class="metric-section-head">
+          <div>
+            <p class="kicker">Cron</p>
+            <h2>定时任务</h2>
+          </div>
+          <span class="head-meta" id="jobCount"></span>
+        </div>
+        <div class="list-panel" id="jobList">
+          <div class="empty">加载中…</div>
+        </div>
+      </section>
+    </main>
+
+    <p id="errorBanner" class="toast-message error" role="alert" aria-live="polite"></p>
+
+    <script>
+      const API_BASE = '/api';
+      let refreshing = false;
+      let toastTimer = 0;
+
+      function showToast(message, type = 'error', timeout = 3500) {
+        const toast = document.getElementById('errorBanner');
+        window.clearTimeout(toastTimer);
+        toast.textContent = message;
+        toast.className = `toast-message show ${type === 'error' ? 'error' : ''}`;
+        toastTimer = window.setTimeout(() => toast.classList.remove('show'), timeout);
+      }
+
+      async function fetchAll() {
+        if (refreshing) return;
+        refreshing = true;
+        const btn = document.getElementById('refreshBtn');
+        btn.disabled = true;
+        btn.textContent = '刷新中…';
+        try {
+          const [jobsRes, sysRes] = await Promise.all([
+            fetch(`${API_BASE}/jobs`, { cache: 'no-store' }),
+            fetch(`${API_BASE}/system`, { cache: 'no-store' })
+          ]);
+          const jobs = await jobsRes.json();
+          const sys = await sysRes.json();
+          renderDaemons(sys);
+          renderJobs(jobs);
+          document.getElementById('updateTime').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
+        } catch (e) {
+          showToast('数据加载失败: ' + e.message);
+        } finally {
+          refreshing = false;
+          btn.disabled = false;
+          btn.textContent = '⟳ 刷新';
+        }
+      }
+
+      function renderDaemons(sys) {
+        const list = document.getElementById('daemonList');
+        const entries = Object.entries(sys);
+        if (!entries.length) {
+          list.innerHTML = '<div class="empty">暂无服务数据</div>';
+          return;
+        }
+        list.innerHTML = '';
+        for (const [name, info] of entries) {
+          const row = document.createElement('div');
+          row.className = 'row daemon';
+          const dot = info.running
+            ? '<span class="dot running">运行中</span>'
+            : '<span class="dot stopped">已停止</span>';
+          const pid = info.pid ? `<span class="meta">PID ${info.pid}</span>` : '';
+          const statusExtra = info.status ? `<span class="meta">${info.status}</span>` : '';
+          row.innerHTML = `
+            <span class="name">${info.desc || name}</span>
+            ${dot}
+            <span class="meta">${pid ? pid + ' ' : ''}${statusExtra}</span>
+          `;
+          list.appendChild(row);
+        }
+      }
+
+      function renderJobs(jobs) {
+        const list = document.getElementById('jobList');
+        document.getElementById('jobCount').textContent = jobs.length ? `${jobs.length} 个任务` : '';
+        if (!jobs.length) {
+          list.innerHTML = '<div class="empty">暂无定时任务</div>';
+          return;
+        }
+        list.innerHTML = '';
+        for (const job of jobs) {
+          const row = document.createElement('div');
+          row.className = 'row job';
+
+          const status = job.last_status || 'unknown';
+          const tagClass = status === 'ok' ? 'tag-ok' : status === 'error' ? 'tag-error' : 'tag-unknown';
+          const statusLabel = {ok:'✓ 正常', error:'✕ 失败', unknown:'? 未知'}[status] || status;
+
+          const lastRun = job.last_run_at ? timeAgo(job.last_run_at) : '从未';
+          const nextRun = job.next_run_at ? formatTs(job.next_run_at) : '—';
+
+          const deliverTag = job.deliver
+            ? (job.deliver === 'local' ? 'tag-ok' : 'tag-warn')
+            : 'tag-unknown';
+
+          row.innerHTML = `
+            <span class="name">${job.name}</span>
+            <span class="col-schedule"><span class="tag tag-info">${scheduleDisplay(job.schedule)}</span></span>
+            <span class="col-deliver"><span class="tag ${deliverTag}">${job.deliver || '—'}</span></span>
+            <span class="time">${lastRun}</span>
+            <span class="col-next next-run">${nextRun}</span>
+            <span><span class="tag ${tagClass}">${statusLabel}</span></span>
+          `;
+          list.appendChild(row);
+        }
+      }
+
+      function formatTs(ts) {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        return d.toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+      }
+
+      function timeAgo(ts) {
+        if (!ts) return '从未';
+        const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+        if (diff < 60) return '刚刚';
+        if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+        if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+        return Math.floor(diff/86400) + ' 天前';
+      }
+
+      function scheduleDisplay(sched) {
+        if (!sched) return '—';
+        if (typeof sched === 'string') return sched;
+        return sched.display || sched.expr || '—';
+      }
+
+      // 初始加载
+      fetchAll();
+      // 每 30 秒自动刷新
+      setInterval(fetchAll, 30000);
+      // 页面重新可见时自动刷新（切回标签页时立即拉取最新数据）
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) fetchAll();
+      });
+      // 窗口重新获得焦点时也刷新
+      window.addEventListener('focus', fetchAll);
+    </script>
+  </body>
 </html>
