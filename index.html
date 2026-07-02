@@ -87,7 +87,22 @@
         margin: 0 auto;
         padding: 48px 0 72px;
         position: relative;
+        transform-origin: top center;
+        transition: transform 0.2s ease;
       }
+
+      /* 嵌入 iframe 模式：紧凑、撑满、关闭背景动画 */
+      body.embedded .shell {
+        width: 100%;
+        padding: 20px 16px 32px;
+      }
+      body.embedded::before { animation: none; }
+      body.embedded h1 { font-size: clamp(20px, 3vw, 32px); }
+      body.embedded .kicker { font-size: 10px; margin-bottom: 4px; }
+      body.embedded h2 { font-size: clamp(16px, 2.2vw, 22px); }
+      body.embedded .panel { padding: 14px; border-radius: 12px; }
+      body.embedded .row { padding: 9px 12px; }
+      body.embedded button { min-height: 36px; padding: 0 16px; font-size: 12px; }
 
       h1, h2, h3, p { margin-top: 0; }
 
@@ -502,6 +517,55 @@
       let refreshing = false;
       let toastTimer = 0;
 
+      // ─── 嵌入模式与缩放控制 ───────────────────────────────────
+      const isInIframe = window.self !== window.top;
+      let userScale = 1;  // 由 URL 参数或 postMessage 设置
+
+      // URL 参数 ?scale=0.8
+      (function initScale() {
+        const params = new URLSearchParams(window.location.search);
+        const s = parseFloat(params.get('scale'));
+        if (s > 0 && s <= 2) userScale = s;
+      })();
+
+      // 嵌入模式自动启用
+      if (isInIframe) document.body.classList.add('embedded');
+
+      // 接收父窗口 postMessage: { type: 'setScale', scale: 0.8 }
+      window.addEventListener('message', (e) => {
+        const data = e.data || {};
+        if (data.type === 'setScale' && typeof data.scale === 'number') {
+          userScale = Math.max(0.3, Math.min(2, data.scale));
+          applyScale();
+        }
+      });
+
+      // 根据视口宽度自动计算适配缩放（嵌入模式下生效）
+      function computeFitScale() {
+        if (!isInIframe) return 1;
+        // 设计基准宽度 1100px，小于此值按比例缩小
+        const baseWidth = 1100;
+        const w = window.innerWidth;
+        return w < baseWidth ? w / baseWidth : 1;
+      }
+
+      function applyScale() {
+        const fit = computeFitScale();
+        const finalScale = Math.min(fit, userScale);
+        document.querySelector('.shell').style.transform = `scale(${finalScale})`;
+        // 缩放后高度会变化，通知父窗口（iframe 自适应高度）
+        if (isInIframe) {
+          const h = document.body.scrollHeight;
+          window.parent.postMessage({ type: 'resize', height: h, scale: finalScale }, '*');
+        }
+      }
+
+      // 视口变化时重新缩放
+      window.addEventListener('resize', applyScale);
+      if (window.ResizeObserver) {
+        new ResizeObserver(applyScale).observe(document.body);
+      }
+
       function showToast(message, type = 'error', timeout = 3500) {
         const toast = document.getElementById('errorBanner');
         window.clearTimeout(toastTimer);
@@ -682,6 +746,7 @@
       }
 
       // 初始加载
+      applyScale();   // 先应用缩放，避免首次渲染抖动
       fetchAll();
       // 每 30 秒自动刷新
       setInterval(fetchAll, 30000);
