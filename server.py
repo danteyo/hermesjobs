@@ -197,8 +197,8 @@ def load_cron_jobs():
 
 # ─── System Services (dynamic scan) ─────────────────────────────────────────
 
-# 服务名 → 中文备注映射（按前缀/关键字匹配）
-SERVICE_ALIASES = {
+# 服务名 → 中文备注映射（按前缀/关键字匹配，内置默认值）
+DEFAULT_ALIASES = {
     "hermes-gateway": "Hermes 网关",
     "hermes-agent": "Hermes 代理",
     "hermes-cli": "Hermes 命令行",
@@ -207,13 +207,57 @@ SERVICE_ALIASES = {
     "docker": "Docker 容器",
 }
 
+# 用户自定义别名（从磁盘加载，覆盖默认值）
+USER_ALIASES = {}
+
+# 用户别名持久化路径
+ALIASES_FILE = HERMES_DIR / "monitor" / "aliases.json"
+
+
+def load_user_aliases():
+    """从磁盘加载用户自定义别名"""
+    global USER_ALIASES
+    try:
+        if ALIASES_FILE.exists():
+            with open(ALIASES_FILE, "r", encoding="utf-8") as f:
+                USER_ALIASES = json.load(f)
+    except Exception as e:
+        sys.stderr.write(f"[load aliases error] {e}\n")
+        USER_ALIASES = {}
+
+
+def save_user_alias(name, alias):
+    """保存单个别名到磁盘"""
+    global USER_ALIASES
+    try:
+        ALIASES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if alias:
+            USER_ALIASES[name] = alias
+        else:
+            USER_ALIASES.pop(name, None)
+        with open(ALIASES_FILE, "w", encoding="utf-8") as f:
+            json.dump(USER_ALIASES, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        sys.stderr.write(f"[save alias error] {e}\n")
+        return False
+
+
+# 启动时加载用户别名
+load_user_aliases()
+
 
 def alias_for(name):
-    """根据服务名返回中文备注"""
-    if name in SERVICE_ALIASES:
-        return SERVICE_ALIASES[name]
+    """根据服务名返回中文备注：用户自定义 > 内置默认 > 关键字匹配 > 空"""
+    # 1. 用户自定义（优先级最高）
+    if name in USER_ALIASES:
+        return USER_ALIASES[name]
+    # 2. 内置默认
+    if name in DEFAULT_ALIASES:
+        return DEFAULT_ALIASES[name]
+    # 3. 关键字模糊匹配（用内置表）
     low = name.lower()
-    for key, alias in SERVICE_ALIASES.items():
+    for key, alias in DEFAULT_ALIASES.items():
         if key in low:
             return alias
     return ""
@@ -454,9 +498,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             super().do_GET()
 
-    def send_json(self, data):
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path   = parsed.path
+
+        if path == "/api/alias":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode("utf-8")
+                data = json.loads(body)
+                name = (data.get("name") or "").strip()
+                alias = (data.get("alias") or "").strip()
+                if not name:
+                    self.send_json({"ok": False, "error": "name 不能为空"}, code=400)
+                    return
+                ok = save_user_alias(name, alias)
+                self.send_json({"ok": ok, "alias": alias_for(name) if ok else ""})
+            except Exception as e:
+                self.send_json({"ok": False, "error": str(e)}, code=500)
+        else:
+            self.send_json({"ok": False, "error": "unknown endpoint"}, code=404)
+
+    def send_json(self, data, code=200):
         body = json.dumps(data, ensure_ascii=False, indent=2)
-        self.send_response(200)
+        self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()

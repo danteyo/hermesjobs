@@ -269,6 +269,32 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        cursor: text;
+        padding: 2px 6px;
+        margin: -2px -6px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        transition: border-color 0.15s, background 0.15s;
+        outline: none;
+        min-width: 60px;
+      }
+
+      .row .alias:hover {
+        border-color: rgba(0, 217, 255, 0.3);
+        background: rgba(0, 217, 255, 0.05);
+      }
+
+      .row .alias:focus {
+        border-color: var(--accent);
+        background: rgba(0, 217, 255, 0.08);
+        box-shadow: 0 0 0 2px rgba(0, 217, 255, 0.15);
+      }
+
+      .row .alias[data-empty="true"]::before {
+        content: "点击编辑";
+        color: var(--muted);
+        opacity: 0.4;
+        font-style: italic;
       }
 
       .row .uptime {
@@ -509,6 +535,32 @@
         }
       }
 
+      // 保存中的服务名集合，避免重复提交
+      const aliasSaving = new Set();
+
+      async function saveAlias(name, alias) {
+        if (aliasSaving.has(name)) return;
+        aliasSaving.add(name);
+        try {
+          const res = await fetch(`${API_BASE}/alias`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, alias })
+          });
+          const data = await res.json();
+          if (!data.ok) {
+            showToast('备注保存失败: ' + (data.error || ''));
+            return false;
+          }
+          return true;
+        } catch (e) {
+          showToast('备注保存失败: ' + e.message);
+          return false;
+        } finally {
+          aliasSaving.delete(name);
+        }
+      }
+
       function renderDaemons(sys) {
         const list = document.getElementById('daemonList');
         const entries = Object.entries(sys);
@@ -525,17 +577,51 @@
             : '<span class="dot stopped">已停止</span>';
           const pid = info.pid ? `<span class="meta">PID ${info.pid}</span>` : '';
           const statusExtra = info.status ? `<span class="meta">${info.status}</span>` : '';
-          const alias = info.alias || '—';
+          const alias = info.alias || '';
           const uptime = info.uptime ? `<span class="uptime">${info.uptime}</span>` : '<span class="meta">—</span>';
           row.innerHTML = `
             <span class="name">${info.desc || name}</span>
-            <span class="alias">${alias}</span>
+            <span class="alias" contenteditable="true" spellcheck="false" data-name="${name}" data-empty="${!alias}">${alias}</span>
             ${dot}
             ${uptime}
             <span class="meta">${pid ? pid + ' ' : ''}${statusExtra}</span>
           `;
           list.appendChild(row);
         }
+        // 绑定 alias 编辑事件
+        list.querySelectorAll('.alias').forEach(el => {
+          const name = el.dataset.name;
+          const finishEdit = async () => {
+            const val = el.textContent.trim();
+            el.dataset.empty = !val;
+            // 仅在内容变化时保存
+            if (val !== el.dataset.original) {
+              const ok = await saveAlias(name, val);
+              if (ok) {
+                el.dataset.original = val;
+                showToast('备注已保存', 'success');
+              } else {
+                // 恢复原值
+                el.textContent = el.dataset.original || '';
+                el.dataset.empty = !el.dataset.original;
+              }
+            }
+          };
+          el.addEventListener('focus', () => {
+            el.dataset.original = el.textContent;
+          });
+          el.addEventListener('blur', finishEdit);
+          el.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              el.blur();
+            } else if (e.key === 'Escape') {
+              el.textContent = el.dataset.original || '';
+              el.dataset.empty = !el.dataset.original;
+              el.blur();
+            }
+          });
+        });
       }
 
       function renderJobs(jobs) {
