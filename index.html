@@ -709,7 +709,17 @@
           return;
         }
         list.innerHTML = '';
+        // 按 PID 去重：相同 PID 只显示第一条
+        const seenPids = new Set();
+        const deduped = [];
         for (const [name, info] of entries) {
+          if (info.pid) {
+            if (seenPids.has(info.pid)) continue;
+            seenPids.add(info.pid);
+          }
+          deduped.push([name, info]);
+        }
+        for (const [name, info] of deduped) {
           const row = document.createElement('div');
           row.className = 'row daemon';
           const dot = info.running
