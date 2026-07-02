@@ -196,6 +196,86 @@ def load_cron_jobs():
     return result
 
 # ─── System Services (dynamic scan) ─────────────────────────────────────────
+
+# 服务名 → 中文备注映射（按前缀/关键字匹配）
+SERVICE_ALIASES = {
+    "hermes-gateway": "Hermes 网关",
+    "hermes-agent": "Hermes 代理",
+    "hermes-cli": "Hermes 命令行",
+    "ha-ws-daemon": "HA WebSocket 守护进程",
+    "ha-ws": "HA WebSocket 守护进程",
+    "docker": "Docker 容器",
+}
+
+
+def alias_for(name):
+    """根据服务名返回中文备注"""
+    if name in SERVICE_ALIASES:
+        return SERVICE_ALIASES[name]
+    low = name.lower()
+    for key, alias in SERVICE_ALIASES.items():
+        if key in low:
+            return alias
+    return ""
+
+
+def format_uptime(seconds):
+    """把秒数格式化为可读时长，如 '3天 2小时' / '15分钟' / '45秒'"""
+    try:
+        seconds = int(seconds)
+    except (ValueError, TypeError):
+        return ""
+    if seconds <= 0:
+        return ""
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
+    if days > 0:
+        return f"{days}天 {hours}小时"
+    if hours > 0:
+        return f"{hours}小时 {mins}分钟"
+    if mins > 0:
+        return f"{mins}分钟"
+    return f"{secs}秒"
+
+
+def get_process_uptime(pid):
+    """通过 ps 获取进程运行时长（秒）"""
+    if not pid:
+        return ""
+    try:
+        r = subprocess.run(
+            ["ps", "-o", "etimes=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0:
+            return format_uptime(r.stdout.strip())
+    except Exception:
+        pass
+    return ""
+
+
+def get_systemd_uptime(svc):
+    """通过 systemd 获取服务运行时长（基于 ActiveEnterTimestamp）"""
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "show", svc, "--property=ActiveEnterTimestamp"],
+            capture_output=True, text=True, timeout=5
+        )
+        ts_str = r.stdout.strip().split("=", 1)[1] if "=" in r.stdout else ""
+        if not ts_str:
+            return ""
+        # 格式如: Wed 2024-01-10 08:30:00 CST
+        from datetime import datetime
+        # 去掉时区后缀，解析
+        ts_clean = ts_str.rsplit(" ", 1)[0]  # 去掉 CST/UTC
+        dt = datetime.strptime(ts_clean, "%a %Y-%m-%d %H:%M:%S")
+        delta = (datetime.now() - dt).total_seconds()
+        return format_uptime(delta)
+    except Exception:
+        return ""
+
+
 def check_system_services():
     """动态扫描所有 hermes-* / ha-* 前缀的 systemd user services"""
     services = {}
@@ -231,6 +311,7 @@ def check_system_services():
             running = state_r.stdout.strip() in ("active", "activating")
             # 获取PID（仅running的进程）
             pid = None
+            uptime = ""
             if running:
                 # 匹配规则：hermes-xxx -> "hermes" 进程链中有 xxx；ha-xxx -> 进程名为 ha_xxx.py
                 if svc_clean.startswith("hermes-"):
@@ -263,29 +344,82 @@ def check_system_services():
                     )
                 if pid_r.returncode == 0:
                     pid = pid_r.stdout.strip().split()[0]
-            services[svc_clean] = {"desc": desc, "running": running, "pid": pid}
+                    # 优先用 pid 查进程时长，失败则用 systemd 时间戳
+                    uptime = get_process_uptime(pid) or get_systemd_uptime(svc_clean)
+                else:
+                    uptime = get_systemd_uptime(svc_clean)
+            services[svc_clean] = {
+                "desc": desc,
+                "alias": alias_for(svc_clean),
+                "running": running,
+                "pid": pid,
+                "uptime": uptime,
+            }
     except Exception as e:
         sys.stderr.write(f"[systemd scan error] {e}\n")
     return services
 
 # ─── Docker Containers ────────────────────────────────────────────────────────
+def parse_docker_uptime(status):
+    """从 docker ps 的 Status 字段解析运行时长。
+
+    示例：
+      "Up 3 days"          -> "3天 0小时"
+      "Up 2 hours"         -> "2小时 0分钟"
+      "Up 45 minutes"      -> "45分钟"
+      "Up 10 seconds"      -> "10秒"
+      "Up About a minute"  -> "1分钟"
+      "Exited (0) 2 hours ago" -> ""
+    """
+    if not status or "Up" not in status:
+        return ""
+    # 提取 Up 后面的部分
+    up_part = status.split("Up", 1)[1].strip()
+    # 去掉可能的括号说明，如 "Up 2 hours (healthy)"
+    up_part = up_part.split("(", 1)[0].strip()
+
+    import re
+    days = hours = minutes = seconds = 0
+    m = re.search(r"(\d+)\s*day", up_part)
+    if m:
+        days = int(m.group(1))
+    m = re.search(r"(\d+)\s*hour", up_part)
+    if m:
+        hours = int(m.group(1))
+    m = re.search(r"(\d+)\s*minute", up_part)
+    if m:
+        minutes = int(m.group(1))
+    m = re.search(r"(\d+)\s*second", up_part)
+    if m:
+        seconds = int(m.group(1))
+
+    if "About a minute" in up_part:
+        minutes = 1
+    if not (days or hours or minutes or seconds):
+        return ""
+    total = days * 86400 + hours * 3600 + minutes * 60 + seconds
+    return format_uptime(total)
+
+
 def check_docker_containers():
     containers = {}
     try:
         r = subprocess.run(
-            ["sudo", "docker", "ps", "--format", "{{.Names}} {{.Status}}"],
+            ["sudo", "docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
             capture_output=True, text=True, timeout=15
         )
         for line in r.stdout.strip().split("\n"):
             if not line:
                 continue
-            parts = line.split(" ", 1)
+            parts = line.split("\t", 1)
             name = parts[0]
             status = parts[1] if len(parts) > 1 else ""
             containers[name] = {
                 "desc":   name,
+                "alias":  alias_for(name),
                 "running": "Up" in status,
                 "status": status,
+                "uptime": parse_docker_uptime(status),
             }
     except Exception:
         pass

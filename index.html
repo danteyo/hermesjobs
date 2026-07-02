@@ -257,9 +257,25 @@
 
       .row:hover { background: rgba(0, 217, 255, 0.04); }
 
-      /* 守护进程行：名称 | 状态 | PID/状态文本 */
+      /* 守护进程行：名称 | 备注 | 状态 | 运行时长 | PID/状态文本 */
       .row.daemon {
-        grid-template-columns: minmax(0, 1fr) auto auto;
+        grid-template-columns: minmax(120px, 1fr) minmax(80px, 1fr) auto auto auto;
+      }
+
+      .row .alias {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .row .uptime {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 650;
+        white-space: nowrap;
       }
 
       /* 任务行：名称 | 周期 | 推送 | 上次 | 下次 | 状态 */
@@ -392,7 +408,12 @@
         .refresh-status { text-align: left; }
         h1 { font-size: 34px; }
 
-        .row.daemon { grid-template-columns: minmax(0, 1fr) auto; }
+        .row.daemon {
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 6px 14px;
+        }
+        .row.daemon .alias,
+        .row.daemon .uptime { display: none; }
         .row.job {
           grid-template-columns: minmax(0, 1fr) auto;
           gap: 6px 14px;
@@ -504,9 +525,13 @@
             : '<span class="dot stopped">已停止</span>';
           const pid = info.pid ? `<span class="meta">PID ${info.pid}</span>` : '';
           const statusExtra = info.status ? `<span class="meta">${info.status}</span>` : '';
+          const alias = info.alias || '—';
+          const uptime = info.uptime ? `<span class="uptime">${info.uptime}</span>` : '<span class="meta">—</span>';
           row.innerHTML = `
             <span class="name">${info.desc || name}</span>
+            <span class="alias">${alias}</span>
             ${dot}
+            ${uptime}
             <span class="meta">${pid ? pid + ' ' : ''}${statusExtra}</span>
           `;
           list.appendChild(row);
