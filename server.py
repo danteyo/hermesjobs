@@ -41,36 +41,81 @@ def load_cron_jobs():
             "script":      j.get("script", ""),
             "no_agent":    j.get("no_agent", False),
             "job_id":      j.get("job_id", ""),
+            "deliver":     j.get("deliver", ""),
         })
     return result
 
-# ─── System Services ──────────────────────────────────────────────────────────
-SYSTEM_SERVICES = [
-    ("ha-ws-daemon",  "HA WebSocket 守护进程"),
-    ("docker",        "Docker 容器引擎"),
-]
-
+# ─── System Services (dynamic scan) ─────────────────────────────────────────
 def check_system_services():
+    """动态扫描所有 hermes-* / ha-* 前缀的 systemd user services"""
     services = {}
-    for svc, desc in SYSTEM_SERVICES:
-        try:
-            r = subprocess.run(
-                ["systemctl", "is-active", svc],
-                capture_output=True, text=True, timeout=10
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "list-units", "--type=service", "--all",
+             "--no-pager", "--no-legend"],
+            capture_output=True, text=True, timeout=15
+        )
+        prefixes = ("hermes-", "ha-", "docker")
+        for line in r.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            svc = parts[0].removesuffix(".service")
+            if not any(svc.startswith(p) for p in prefixes):
+                continue
+            # 去掉 .service 后缀
+            svc_clean = svc
+            # 获取Description
+            desc_r = subprocess.run(
+                ["systemctl", "--user", "show", svc_clean, "--property=Description"],
+                capture_output=True, text=True, timeout=5
             )
-            running = r.stdout.strip() == "active"
-            services[svc] = {"desc": desc, "running": running, "pid": None}
-            # Try to get PID
-            if running and svc == "ha-ws-daemon":
-                r2 = subprocess.run(
-                    ["pgrep", "-f", "ha_ws_daemon.py"],
-                    capture_output=True, text=True, timeout=5
-                )
-                if r2.returncode == 0:
-                    pids = r2.stdout.strip().split()
-                    services[svc]["pid"] = pids[0] if pids else None
-        except Exception:
-            services[svc] = {"desc": desc, "running": False, "pid": None}
+            desc = desc_r.stdout.strip().split("=", 1)[1] if "=" in desc_r.stdout else svc_clean
+            # 获取active状态
+            state_r = subprocess.run(
+                ["systemctl", "--user", "is-active", svc_clean],
+                capture_output=True, text=True, timeout=5
+            )
+            running = state_r.stdout.strip() in ("active", "activating")
+            # 获取PID（仅running的进程）
+            pid = None
+            if running:
+                # 匹配规则：hermes-xxx -> "hermes" 进程链中有 xxx；ha-xxx -> 进程名为 ha_xxx.py
+                if svc_clean.startswith("hermes-"):
+                    # hermes-gateway -> 进程名包含 hermes_cli.main 或 hermes-gateway
+                    pid_r = subprocess.run(
+                        ["pgrep", "-f", "hermes_cli.main"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if pid_r.returncode != 0:
+                        pid_r = subprocess.run(
+                            ["pgrep", "-f", svc_clean],
+                            capture_output=True, text=True, timeout=5
+                        )
+                elif svc_clean.startswith("ha-"):
+                    # ha-ws-daemon -> 进程cmdline中有 ha_ws_daemon.py 或 hermes (因为gateway也是daemon)
+                    # 优先用进程名匹配
+                    pid_r = subprocess.run(
+                        ["pgrep", "-f", "ha_ws_daemon"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if pid_r.returncode != 0:
+                        pid_r = subprocess.run(
+                            ["pgrep", "-f", svc_clean],
+                            capture_output=True, text=True, timeout=5
+                        )
+                else:
+                    pid_r = subprocess.run(
+                        ["pgrep", "-f", svc_clean],
+                        capture_output=True, text=True, timeout=5
+                    )
+                if pid_r.returncode == 0:
+                    pid = pid_r.stdout.strip().split()[0]
+            services[svc_clean] = {"desc": desc, "running": running, "pid": pid}
+    except Exception as e:
+        sys.stderr.write(f"[systemd scan error] {e}\n")
     return services
 
 # ─── Docker Containers ────────────────────────────────────────────────────────

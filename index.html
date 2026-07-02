@@ -80,6 +80,7 @@
       <tr>
         <th>任务名称</th>
         <th>调度周期</th>
+        <th>推送目标</th>
         <th>上次执行</th>
         <th>下次执行</th>
         <th>状态</th>
@@ -162,6 +163,7 @@ function renderJobs(jobs) {
     tr.innerHTML = `
       <td>${job.name}</td>
       <td><span class="tag tag-info">${scheduleDisplay(job.schedule)}</span></td>
+      <td><span class="tag ${job.deliver === 'local' ? 'tag-ok' : 'tag-warn'}">${job.deliver || '—'}</span></td>
       <td><span class="time">${lastRun}</span></td>
       <td><span class="next-run">${nextRun}</span></td>
       <td><span class="tag ${tagClass}">${statusLabel}</span></td>
