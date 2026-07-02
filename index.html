@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Jobs Monitor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f1117; color: #e6e6e6; min-height: 100vh; }
+  .header { background: #1a1d27; border-bottom: 1px solid #2a2d3a; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  .header h1 { font-size: 18px; font-weight: 600; color: #fff; }
+  .header .badge { background: #238636; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 12px; }
+  .header .refresh-btn { margin-left: auto; background: #2a2d3a; border: 1px solid #3d4152; color: #e6e6e6; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .header .refresh-btn:hover { background: #3d4152; }
+  .header .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .stats-bar { display: flex; gap: 12px; padding: 16px 24px; background: #161921; overflow-x: auto; }
+  .stat-card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; padding: 12px 20px; min-width: 120px; text-align: center; }
+  .stat-card .num { font-size: 28px; font-weight: 700; }
+  .stat-card .num.green { color: #3fb950; }
+  .stat-card .num.red { color: #f85149; }
+  .stat-card .num.yellow { color: #d29922; }
+  .stat-card .label { font-size: 12px; color: #8b949e; margin-top: 4px; }
+
+  .section { padding: 16px 24px; }
+  .section-title { font-size: 14px; font-weight: 600; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 12px; font-size: 12px; font-weight: 600; color: #8b949e; border-bottom: 1px solid #2a2d3a; }
+  td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #21252b; vertical-align: middle; }
+  tr:hover td { background: #1c1f2a; }
+  tr:last-child td { border-bottom: none; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .tag-ok { background: #1a472a; color: #3fb950; }
+  .tag-error { background: #5a1a1a; color: #f85149; }
+  .tag-warn { background: #3d2e00; color: #d29922; }
+  .tag-info { background: #1a2a47; color: #58a6ff; }
+  .tag-unknown { background: #2a2d3a; color: #8b949e; }
+
+  .error-msg { color: #f85149; font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .next-run { color: #8b949e; font-size: 12px; }
+
+  .daemon-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .daemon-card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 8px; padding: 14px 16px; }
+  .daemon-card .name { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .daemon-card .info { font-size: 12px; color: #8b949e; }
+  .daemon-card .info span { color: #3fb950; }
+  .daemon-card .info span.inactive { color: #f85149; }
+
+  .time { font-size: 11px; color: #484f58; }
+  .loading { text-align: center; padding: 40px; color: #8b949e; }
+  .error-banner { background: #5a1a1a; border: 1px solid #f85149; color: #f85149; padding: 12px 24px; margin: 16px 24px; border-radius: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🔭 Hermes Jobs Monitor</h1>
+  <span class="badge" id="updateTime">--</span>
+  <button class="refresh-btn" id="refreshBtn" onclick="fetchAll()">⟳ 刷新</button>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card"><div class="num" id="statTotal">-</div><div class="label">总任务</div></div>
+  <div class="stat-card"><div class="num green" id="statOk">-</div><div class="label">正常</div></div>
+  <div class="stat-card"><div class="num red" id="statError">-</div><div class="label">异常</div></div>
+  <div class="stat-card"><div class="num yellow" id="statWarn">-</div><div class="label">预警</div></div>
+</div>
+
+<div class="section">
+  <div class="section-title">🖥️ 系统服务 & 守护进程</div>
+  <div class="daemon-grid" id="daemonGrid"></div>
+</div>
+
+<div class="section">
+  <div class="section-title">⏰ 定时任务</div>
+  <table>
+    <thead>
+      <tr>
+        <th>任务名称</th>
+        <th>调度周期</th>
+        <th>上次执行</th>
+        <th>下次执行</th>
+        <th>状态</th>
+        <th>错误信息</th>
+      </tr>
+    </thead>
+    <tbody id="jobsTable"></tbody>
+  </table>
+</div>
+
+<div id="errorBanner" class="error-banner" style="display:none"></div>
+
+<script>
+const API_BASE = '/api';
+let refreshing = false;
+
+async function fetchAll() {
+  if (refreshing) return;
+  refreshing = true;
+  document.getElementById('refreshBtn').disabled = true;
+  try {
+    const [jobsRes, sysRes] = await Promise.all([
+      fetch(`${API_BASE}/jobs`),
+      fetch(`${API_BASE}/system`)
+    ]);
+    const jobs = await jobsRes.json();
+    const sys = await sysRes.json();
+    renderStats(jobs);
+    renderDaemons(sys);
+    renderJobs(jobs);
+    document.getElementById('updateTime').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
+  } catch (e) {
+    showError('数据加载失败: ' + e.message);
+  } finally {
+    refreshing = false;
+    document.getElementById('refreshBtn').disabled = false;
+  }
+}
+
+function renderStats(jobs) {
+  const total = jobs.length;
+  const ok = jobs.filter(j => j.last_status === 'ok').length;
+  const error = jobs.filter(j => j.last_status === 'error').length;
+  const warn = jobs.filter(j => j.last_status && j.last_status !== 'ok' && j.last_status !== 'error').length;
+  document.getElementById('statTotal').textContent = total;
+  document.getElementById('statOk').textContent = ok;
+  document.getElementById('statError').textContent = error;
+  document.getElementById('statWarn').textContent = warn;
+}
+
+function renderDaemons(sys) {
+  const grid = document.getElementById('daemonGrid');
+  grid.innerHTML = '';
+  for (const [name, info] of Object.entries(sys)) {
+    const div = document.createElement('div');
+    div.className = 'daemon-card';
+    const statusHtml = info.running
+      ? `<span>运行中</span>`
+      : `<span class="inactive">已停止</span>`;
+    div.innerHTML = `
+      <div class="name">${info.desc || name}</div>
+      <div class="info">状态: ${statusHtml} ${info.pid ? '· PID: ' + info.pid : ''}</div>
+    `;
+    grid.appendChild(div);
+  }
+}
+
+function renderJobs(jobs) {
+  const tbody = document.getElementById('jobsTable');
+  tbody.innerHTML = '';
+  for (const job of jobs) {
+    const tr = document.createElement('tr');
+    const status = job.last_status || 'unknown';
+    const tagClass = status === 'ok' ? 'tag-ok' : status === 'error' ? 'tag-error' : 'tag-unknown';
+    const statusLabel = {ok:'✅ 正常', error:'❌ 失败', unknown:'❓ 未知'}[status] || status;
+
+    const lastRun = job.last_run_at ? timeAgo(job.last_run_at) : '从未';
+    const nextRun = job.next_run_at ? scheduleDesc(job.next_run_at, job.schedule) : formatTs(job.next_run_at);
+
+    tr.innerHTML = `
+      <td>${job.name}</td>
+      <td><span class="tag tag-info">${scheduleDisplay(job.schedule)}</span></td>
+      <td><span class="time">${lastRun}</span></td>
+      <td><span class="next-run">${nextRun}</span></td>
+      <td><span class="tag ${tagClass}">${statusLabel}</span></td>
+      <td><span class="error-msg" title="${job.last_delivery_error || ''}">${job.last_delivery_error || '—'}</span></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function showError(msg) {
+  const b = document.getElementById('errorBanner');
+  b.textContent = msg;
+  b.style.display = 'block';
+}
+
+function formatTs(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'});
+}
+
+function timeAgo(ts) {
+  if (!ts) return '从未';
+  const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+  return Math.floor(diff/86400) + ' 天前';
+}
+
+function scheduleDisplay(sched) {
+  if (!sched) return '—';
+  if (typeof sched === 'string') return sched;
+  return sched.display || sched.expr || '—';
+}
+
+function scheduleDesc(nextRun, sched) {
+  return formatTs(nextRun);
+}
+
+// Initial load
+fetchAll();
+// Auto-refresh every 30s
+setInterval(fetchAll, 30000);
+</script>
+</body>
+</html>
