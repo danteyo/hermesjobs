@@ -10,13 +10,14 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+import argparse
 
 import http.server
 import socketserver
 from urllib.parse import urlparse, parse_qs
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-HERMES_DIR = Path.home() / ".hermes"
+HERMES_DIR = Path(os.environ.get("HERMES_HOME", os.environ.get("HERMES_REAL_HOME", Path.home())))
 CRON_JOBS_FILE = HERMES_DIR / "cron" / "jobs.json"
 DAEMON_SCRIPT = HERMES_DIR / "scripts" / "ha_ws_daemon.py"
 
@@ -149,6 +150,12 @@ def get_system_info():
 
 # ─── HTTP Server ──────────────────────────────────────────────────────────────
 PORT = 8899
+
+# CLI port override
+parser = argparse.ArgumentParser()
+parser.add_argument("--port", type=int, default=PORT)
+args, _ = parser.parse_known_args()
+PORT = args.port
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
