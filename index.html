@@ -443,101 +443,103 @@
 
       /* ============ 响应式 ============ */
       @media (max-width: 720px) {
-        .shell { width: 100%; padding: 20px 14px 40px; }
-        .topbar { flex-direction: column; align-items: stretch; gap: 14px; }
+        .shell { width: 100%; padding: 18px 14px 36px; }
+        .topbar { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 28px; }
         .top-actions { justify-content: space-between; }
-        .refresh-status { text-align: left; font-size: 11px; }
+        .refresh-status { text-align: left; font-size: 11px; min-height: 36px; }
         h1 { font-size: 30px; }
         h2 { font-size: 18px; }
-        .kicker { font-size: 10px; }
+        .kicker { font-size: 10px; margin-bottom: 4px; }
 
-        .metric-section { margin-bottom: 22px; }
+        .metric-section { margin-bottom: 24px; }
         .metric-section-head { margin-bottom: 12px; }
+        .list-panel { border-radius: 14px; }
 
-        /* 卡片式行：网格 → 垂直堆叠 */
+        /* 卡片式行：用 flex-wrap 自然换行，同一行的元素 flex-basis 配合 */
         .row.daemon,
         .row.job {
           display: flex;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 8px;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 8px 12px;
           padding: 12px 14px;
         }
 
-        /* daemon 行：第一行为名称+状态点，第二行为备注/时长/PID */
+        /* === Daemon 行 === */
         .row.daemon .name {
+          flex: 1 1 auto;
+          min-width: 0;
           font-size: 14px;
-          display: flex;
-          align-items: center;
-          gap: 8px;
         }
-        .row.daemon .name::after {
-          content: "";
-          flex: 1;
+        .row.daemon .dot {
+          flex: 0 0 auto;
+          order: 0;
         }
-        /* 让 dot 紧跟名称 */
-        .row.daemon .dot { order: 1; }
         .row.daemon .name { order: 0; }
-        /* 备注行 */
+        /* 备注占满一行 */
         .row.daemon .alias {
-          order: 2;
+          flex: 1 1 100%;
+          order: 1;
           font-size: 12px;
           width: 100%;
           padding: 4px 8px;
           margin: 0;
         }
-        /* 时长 + PID：用 flex 横向排列，自动换行 */
-        .row.daemon .uptime,
-        .row.daemon .meta {
-          order: 3;
+        /* 时长 + PID 同一行 */
+        .row.daemon .uptime {
+          flex: 0 0 auto;
+          order: 2;
           font-size: 11px;
         }
-        /* 让 uptime 和 meta 在同一行：通过 wrap 容器效果 */
-        .row.daemon {
-          flex-wrap: wrap;
-        }
-        .row.daemon .uptime {
-          display: inline-flex;
-          align-items: center;
-        }
         .row.daemon .meta {
-          display: inline-flex;
-          align-items: center;
-          margin-left: 12px;
+          flex: 0 0 auto;
+          order: 2;
+          font-size: 11px;
+          margin-left: 0;
         }
 
-        /* job 行：卡片式 */
+        /* === Job 行 ===
+           第一行：任务名（整行）
+           第二行：调度 | 推送 | 状态（同一行）
+           第三行：上次执行 | 下次执行（两端对齐）
+        */
         .row.job .name {
+          flex: 1 1 100%;
+          order: 0;
           font-size: 14px;
           font-weight: 700;
-          order: 0;
+          margin-bottom: 2px;
         }
-        .row.job .col-schedule { order: 1; }
-        .row.job .col-deliver { order: 2; }
-        .row.job .time { order: 3; font-size: 11px; }
-        .row.job .col-next { order: 4; font-size: 11px; }
-        .row.job > span:last-child { order: 5; }
+        .row.job .col-schedule { flex: 0 0 auto; order: 1; }
+        .row.job .col-deliver  { flex: 0 0 auto; order: 1; }
+        .row.job > span:last-child { flex: 0 0 auto; order: 1; }
 
-        /* 行内子项横向排列优化 */
+        .row.job .time     { flex: 0 0 auto; order: 2; font-size: 11px; }
+        .row.job .col-next { flex: 0 0 auto; order: 2; font-size: 11px; margin-left: auto; text-align: right; }
+
         .row.job .col-schedule,
         .row.job .col-deliver,
         .row.job .time,
         .row.job .col-next {
-          display: flex;
+          display: inline-flex;
           align-items: center;
         }
 
-        .tag { font-size: 10px; padding: 2px 8px; }
+        .tag { font-size: 10px; padding: 3px 9px; }
         button { min-height: 38px; padding: 0 16px; font-size: 12px; }
+
+        /* toast 在手机上更靠上 */
+        .toast-message { top: 12px; font-size: 12px; max-width: calc(100vw - 24px); }
       }
 
       /* 超小屏（≤380px）进一步压缩 */
       @media (max-width: 380px) {
-        .shell { padding: 14px 10px 32px; }
+        .shell { padding: 14px 10px 28px; }
         h1 { font-size: 24px; }
         h2 { font-size: 16px; }
         .row.daemon,
-        .row.job { padding: 10px 12px; gap: 6px; }
+        .row.job { padding: 10px 12px; gap: 6px 10px; }
+        .tag { font-size: 9px; padding: 2px 7px; }
       }
 
       /* 滚动条 */
