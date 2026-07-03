@@ -441,105 +441,104 @@
         to   { opacity: 1; transform: translateY(0); }
       }
 
-      /* ============ 响应式 ============ */
-      @media (max-width: 720px) {
-        .shell { width: 100%; padding: 18px 14px 36px; }
-        .topbar { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 28px; }
-        .top-actions { justify-content: space-between; }
-        .refresh-status { text-align: left; font-size: 11px; min-height: 36px; }
-        h1 { font-size: 30px; }
-        h2 { font-size: 18px; }
-        .kicker { font-size: 10px; margin-bottom: 4px; }
+      /* ============ 响应式（手机端样式，由 body.force-mobile 触发） ============
+         触发条件：URL 带 ?embed=mobile，或视口 ≤720px（由 JS 切换 class） */
+      body.force-mobile .shell { width: 100%; padding: 18px 14px 36px; }
+      body.force-mobile .topbar { flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 28px; }
+      body.force-mobile .top-actions { justify-content: space-between; }
+      body.force-mobile .refresh-status { text-align: left; font-size: 11px; min-height: 36px; }
+      body.force-mobile h1 { font-size: 30px; }
+      body.force-mobile h2 { font-size: 18px; }
+      body.force-mobile .kicker { font-size: 10px; margin-bottom: 4px; }
 
-        .metric-section { margin-bottom: 24px; }
-        .metric-section-head { margin-bottom: 12px; }
-        .list-panel { border-radius: 14px; }
+      body.force-mobile .metric-section { margin-bottom: 24px; }
+      body.force-mobile .metric-section-head { margin-bottom: 12px; }
+      body.force-mobile .list-panel { border-radius: 14px; }
 
-        /* 卡片式行：用 flex-wrap 自然换行，同一行的元素 flex-basis 配合 */
-        .row.daemon,
-        .row.job {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 8px 12px;
-          padding: 12px 14px;
-        }
-
-        /* === Daemon 行 === */
-        .row.daemon .name {
-          flex: 1 1 auto;
-          min-width: 0;
-          font-size: 14px;
-        }
-        .row.daemon .dot {
-          flex: 0 0 auto;
-          order: 0;
-        }
-        .row.daemon .name { order: 0; }
-        /* 备注占满一行 */
-        .row.daemon .alias {
-          flex: 1 1 100%;
-          order: 1;
-          font-size: 12px;
-          width: 100%;
-          padding: 4px 8px;
-          margin: 0;
-        }
-        /* 时长 + PID 同一行 */
-        .row.daemon .uptime {
-          flex: 0 0 auto;
-          order: 2;
-          font-size: 11px;
-        }
-        .row.daemon .meta {
-          flex: 0 0 auto;
-          order: 2;
-          font-size: 11px;
-          margin-left: 0;
-        }
-
-        /* === Job 行 ===
-           第一行：任务名（整行）
-           第二行：调度 | 推送 | 状态（同一行）
-           第三行：上次执行 | 下次执行（两端对齐）
-        */
-        .row.job .name {
-          flex: 1 1 100%;
-          order: 0;
-          font-size: 14px;
-          font-weight: 700;
-          margin-bottom: 2px;
-        }
-        .row.job .col-schedule { flex: 0 0 auto; order: 1; }
-        .row.job .col-deliver  { flex: 0 0 auto; order: 1; }
-        .row.job > span:last-child { flex: 0 0 auto; order: 1; }
-
-        .row.job .time     { flex: 0 0 auto; order: 2; font-size: 11px; }
-        .row.job .col-next { flex: 0 0 auto; order: 2; font-size: 11px; margin-left: auto; text-align: right; }
-
-        .row.job .col-schedule,
-        .row.job .col-deliver,
-        .row.job .time,
-        .row.job .col-next {
-          display: inline-flex;
-          align-items: center;
-        }
-
-        .tag { font-size: 10px; padding: 3px 9px; }
-        button { min-height: 38px; padding: 0 16px; font-size: 12px; }
-
-        /* toast 在手机上更靠上 */
-        .toast-message { top: 12px; font-size: 12px; max-width: calc(100vw - 24px); }
+      /* 卡片式行：用 flex-wrap 自然换行，同一行的元素 flex-basis 配合 */
+      body.force-mobile .row.daemon,
+      body.force-mobile .row.job {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px 12px;
+        padding: 12px 14px;
       }
 
-      /* 超小屏（≤380px）进一步压缩 */
+      /* === Daemon 行 === */
+      body.force-mobile .row.daemon .name {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 14px;
+      }
+      body.force-mobile .row.daemon .dot {
+        flex: 0 0 auto;
+        order: 0;
+      }
+      body.force-mobile .row.daemon .name { order: 0; }
+      /* 备注占满一行 */
+      body.force-mobile .row.daemon .alias {
+        flex: 1 1 100%;
+        order: 1;
+        font-size: 12px;
+        width: 100%;
+        padding: 4px 8px;
+        margin: 0;
+      }
+      /* 时长 + PID 同一行 */
+      body.force-mobile .row.daemon .uptime {
+        flex: 0 0 auto;
+        order: 2;
+        font-size: 11px;
+      }
+      body.force-mobile .row.daemon .meta {
+        flex: 0 0 auto;
+        order: 2;
+        font-size: 11px;
+        margin-left: 0;
+      }
+
+      /* === Job 行 ===
+         第一行：任务名（整行）
+         第二行：调度 | 推送 | 状态（同一行）
+         第三行：上次执行 | 下次执行（两端对齐）
+      */
+      body.force-mobile .row.job .name {
+        flex: 1 1 100%;
+        order: 0;
+        font-size: 14px;
+        font-weight: 700;
+        margin-bottom: 2px;
+      }
+      body.force-mobile .row.job .col-schedule { flex: 0 0 auto; order: 1; }
+      body.force-mobile .row.job .col-deliver  { flex: 0 0 auto; order: 1; }
+      body.force-mobile .row.job > span:last-child { flex: 0 0 auto; order: 1; }
+
+      body.force-mobile .row.job .time     { flex: 0 0 auto; order: 2; font-size: 11px; }
+      body.force-mobile .row.job .col-next { flex: 0 0 auto; order: 2; font-size: 11px; margin-left: auto; text-align: right; }
+
+      body.force-mobile .row.job .col-schedule,
+      body.force-mobile .row.job .col-deliver,
+      body.force-mobile .row.job .time,
+      body.force-mobile .row.job .col-next {
+        display: inline-flex;
+        align-items: center;
+      }
+
+      body.force-mobile .tag { font-size: 10px; padding: 3px 9px; }
+      body.force-mobile button { min-height: 38px; padding: 0 16px; font-size: 12px; }
+
+      /* toast 在手机上更靠上 */
+      body.force-mobile .toast-message { top: 12px; font-size: 12px; max-width: calc(100vw - 24px); }
+
+      /* 超小屏（≤380px）进一步压缩：仅实际视口触发 */
       @media (max-width: 380px) {
-        .shell { padding: 14px 10px 28px; }
-        h1 { font-size: 24px; }
-        h2 { font-size: 16px; }
-        .row.daemon,
-        .row.job { padding: 10px 12px; gap: 6px 10px; }
-        .tag { font-size: 9px; padding: 2px 7px; }
+        body.force-mobile .shell { padding: 14px 10px 28px; }
+        body.force-mobile h1 { font-size: 24px; }
+        body.force-mobile h2 { font-size: 16px; }
+        body.force-mobile .row.daemon,
+        body.force-mobile .row.job { padding: 10px 12px; gap: 6px 10px; }
+        body.force-mobile .tag { font-size: 9px; padding: 2px 7px; }
       }
 
       /* 滚动条 */
@@ -609,6 +608,16 @@
       // 嵌入模式自动启用
       if (isInIframe) document.body.classList.add('embedded');
 
+      // ─── 手机端模式触发：?embed=mobile 或视口 ≤720px ──────────────
+      const params = new URLSearchParams(window.location.search);
+      const embedMobile = params.get('embed') === 'mobile';
+      const mqMobile = window.matchMedia('(max-width: 720px)');
+      function updateMobileMode() {
+        document.body.classList.toggle('force-mobile', embedMobile || mqMobile.matches);
+      }
+      mqMobile.addEventListener('change', updateMobileMode);
+      updateMobileMode();
+
       // 接收父窗口 postMessage: { type: 'setScale', scale: 0.8 }
       window.addEventListener('message', (e) => {
         const data = e.data || {};
@@ -618,9 +627,10 @@
         }
       });
 
-      // 根据视口宽度自动计算适配缩放（嵌入模式下生效）
+      // 根据视口宽度自动计算适配缩放（嵌入模式下生效，但 embed=mobile 时不叠加）
       function computeFitScale() {
         if (!isInIframe) return 1;
+        if (embedMobile) return 1;  // 已用手机端布局，不再缩放
         // 设计基准宽度 1100px，小于此值按比例缩小
         const baseWidth = 1100;
         const w = window.innerWidth;
