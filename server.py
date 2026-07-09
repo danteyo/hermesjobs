@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -15,12 +16,24 @@ import http.server
 import socketserver
 from urllib.parse import urlparse, parse_qs
 
+# 服务启动时间（用于 /health uptime）
+START_TIME = time.time()
+
 # ─── Paths ────────────────────────────────────────────────────────────────────
 # 优先用环境变量 HERMES_HOME 指定家目录，默认 /home/ubuntu
 # （容器内 root 的 Path.home() 是 /root，找不到 ~/.hermes/jobs.json）
 HERMES_DIR = Path(os.environ.get("HERMES_HOME", "/home/ubuntu/.hermes"))
 CRON_JOBS_FILE = HERMES_DIR / "cron" / "jobs.json"
 DAEMON_SCRIPT = HERMES_DIR / "scripts" / "ha_ws_daemon.py"
+
+# ─── 监控的系统级 systemd 服务列表 ────────────────────────────────────────────
+# 每项：name=服务名（systemctl is-active 用），pgrep=辅助进程匹配模式
+# 新增服务时往这里加即可
+SYSTEM_SERVICES = [
+    {"name": "ha-ws-daemon",          "pgrep": "ha_ws_daemon.py"},
+    {"name": "finance-market-daemon", "pgrep": "market_daemon.py"},
+    {"name": "finance-news-daemon",   "pgrep": "news_daemon.py"},
+]
 
 # ─── Cron Jobs ────────────────────────────────────────────────────────────────
 def describe_cron_schedule(schedule):
@@ -300,10 +313,10 @@ def get_process_uptime(pid):
 
 
 def get_systemd_uptime(svc):
-    """通过 systemd 获取服务运行时长（基于 ActiveEnterTimestamp）"""
+    """通过 systemd 获取系统级服务运行时长（基于 ActiveEnterTimestamp）"""
     try:
         r = subprocess.run(
-            ["systemctl", "--user", "show", svc, "--property=ActiveEnterTimestamp"],
+            ["systemctl", "show", svc, "--property=ActiveEnterTimestamp"],
             capture_output=True, text=True, timeout=5
         )
         ts_str = r.stdout.strip().split("=", 1)[1] if "=" in r.stdout else ""
@@ -321,86 +334,79 @@ def get_systemd_uptime(svc):
 
 
 def check_system_services():
-    """动态扫描所有 hermes-* / ha-* 前缀的 systemd user services"""
+    """检查 SYSTEM_SERVICES 列表中的系统级 systemd 服务状态。
+
+    采用「双检」避免假活：
+      - 主检：systemctl is-active <name>（系统级，非 --user）
+      - 辅检：pgrep -f <pattern>
+    状态判定：
+      - active + 找到 PID → running（真活）
+      - active + 无 PID   → stale（假活，systemd 认为活但进程已不在）
+      - 其它              → stopped
+    """
     services = {}
-    try:
-        r = subprocess.run(
-            ["systemctl", "--user", "list-units", "--type=service", "--all",
-             "--no-pager", "--no-legend"],
-            capture_output=True, text=True, timeout=15
-        )
-        prefixes = ("hermes-", "ha-", "docker")
-        for line in r.stdout.strip().split("\n"):
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) < 4:
-                continue
-            svc = parts[0].removesuffix(".service")
-            if not any(svc.startswith(p) for p in prefixes):
-                continue
-            # 去掉 .service 后缀
-            svc_clean = svc
-            # 获取Description
-            desc_r = subprocess.run(
-                ["systemctl", "--user", "show", svc_clean, "--property=Description"],
-                capture_output=True, text=True, timeout=5
-            )
-            desc = desc_r.stdout.strip().split("=", 1)[1] if "=" in desc_r.stdout else svc_clean
-            # 获取active状态
+    for spec in SYSTEM_SERVICES:
+        name = spec["name"]
+        pgrep_pattern = spec.get("pgrep")
+        try:
+            # 主检：systemctl is-active（系统级）
             state_r = subprocess.run(
-                ["systemctl", "--user", "is-active", svc_clean],
+                ["systemctl", "is-active", name],
                 capture_output=True, text=True, timeout=5
             )
-            running = state_r.stdout.strip() in ("active", "activating")
-            # 获取PID（仅running的进程）
+            sd_state = state_r.stdout.strip()
+            active = sd_state in ("active", "activating")
+
+            # 取 Description
+            desc_r = subprocess.run(
+                ["systemctl", "show", name, "--property=Description"],
+                capture_output=True, text=True, timeout=5
+            )
+            desc = desc_r.stdout.strip().split("=", 1)[1] if "=" in desc_r.stdout else name
+
+            # 辅检：pgrep 确认进程真实存在
             pid = None
-            uptime = ""
-            if running:
-                # 匹配规则：hermes-xxx -> "hermes" 进程链中有 xxx；ha-xxx -> 进程名为 ha_xxx.py
-                if svc_clean.startswith("hermes-"):
-                    # hermes-gateway -> 进程名包含 hermes_cli.main 或 hermes-gateway
-                    pid_r = subprocess.run(
-                        ["pgrep", "-f", "hermes_cli.main"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if pid_r.returncode != 0:
-                        pid_r = subprocess.run(
-                            ["pgrep", "-f", svc_clean],
-                            capture_output=True, text=True, timeout=5
-                        )
-                elif svc_clean.startswith("ha-"):
-                    # ha-ws-daemon -> 进程cmdline中有 ha_ws_daemon.py 或 hermes (因为gateway也是daemon)
-                    # 优先用进程名匹配
-                    pid_r = subprocess.run(
-                        ["pgrep", "-f", "ha_ws_daemon"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if pid_r.returncode != 0:
-                        pid_r = subprocess.run(
-                            ["pgrep", "-f", svc_clean],
-                            capture_output=True, text=True, timeout=5
-                        )
-                else:
-                    pid_r = subprocess.run(
-                        ["pgrep", "-f", svc_clean],
-                        capture_output=True, text=True, timeout=5
-                    )
+            if pgrep_pattern:
+                pid_r = subprocess.run(
+                    ["pgrep", "-f", pgrep_pattern],
+                    capture_output=True, text=True, timeout=5
+                )
                 if pid_r.returncode == 0:
-                    pid = pid_r.stdout.strip().split()[0]
-                    # 优先用 pid 查进程时长，失败则用 systemd 时间戳
-                    uptime = get_process_uptime(pid) or get_systemd_uptime(svc_clean)
-                else:
-                    uptime = get_systemd_uptime(svc_clean)
-            services[svc_clean] = {
+                    pids = pid_r.stdout.strip().split()
+                    if pids:
+                        pid = pids[0]
+
+            # 状态判定（双检）
+            if active and pid:
+                state = "running"
+            elif active and not pid:
+                state = "stale"   # 假活
+            else:
+                state = "stopped"
+
+            # 运行时长：仅真活时计算
+            uptime = ""
+            if state == "running" and pid:
+                uptime = get_process_uptime(pid) or get_systemd_uptime(name)
+
+            services[name] = {
                 "desc": desc,
-                "alias": alias_for(svc_clean),
-                "running": running,
+                "alias": alias_for(name),
+                "running": state == "running",
+                "state": state,
                 "pid": pid,
                 "uptime": uptime,
             }
-    except Exception as e:
-        sys.stderr.write(f"[systemd scan error] {e}\n")
+        except Exception as e:
+            sys.stderr.write(f"[systemd scan error] {name}: {e}\n")
+            services[name] = {
+                "desc": name,
+                "alias": alias_for(name),
+                "running": False,
+                "state": "stopped",
+                "pid": None,
+                "uptime": "",
+            }
     return services
 
 # ─── Docker Containers ────────────────────────────────────────────────────────
@@ -495,6 +501,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "jobs":   load_cron_jobs(),
                 "system": get_system_info(),
             })
+        elif path == "/health":
+            # 轻量健康检查：无 subprocess 调用，不阻塞
+            self.send_json({
+                "ok": True,
+                "status": "healthy",
+                "uptime": format_uptime(int(time.time() - START_TIME)),
+                "uptime_seconds": int(time.time() - START_TIME),
+                "time": datetime.now().isoformat(),
+            })
         else:
             super().do_GET()
 
@@ -534,6 +549,9 @@ if __name__ == "__main__":
     print(f"[Hermes Jobs Monitor] 启动于 http://0.0.0.0:{PORT}")
     print(f"  - Cron jobs API:  http://0.0.0.0:{PORT}/api/jobs")
     print(f"  - System API:     http://0.0.0.0:{PORT}/api/system")
+    print(f"  - Health:         http://0.0.0.0:{PORT}/health")
     print(f"  - Dashboard:      http://0.0.0.0:{PORT}/")
-    with socketserver.TCPServer(("0.0.0.0", PORT), Handler) as httpd:
+    # 多线程：每个请求独立线程，阻塞型系统探测不会卡住其它请求
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("0.0.0.0", PORT), Handler) as httpd:
         httpd.serve_forever()

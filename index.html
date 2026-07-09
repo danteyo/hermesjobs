@@ -370,6 +370,7 @@
       }
 
       .dot.running { color: var(--success); }
+      .dot.stale   { color: var(--warn); }
       .dot.stopped { color: var(--danger); }
 
       /* 标签 */
@@ -734,9 +735,13 @@
         for (const [name, info] of deduped) {
           const row = document.createElement('div');
           row.className = 'row daemon';
-          const dot = info.running
-            ? '<span class="dot running">运行中</span>'
-            : '<span class="dot stopped">已停止</span>';
+          // 状态点：running 真活 / stale 假活 / stopped 已停止
+          // systemd 服务有 state 字段；docker 容器用 running 布尔
+          const st = info.state || (info.running ? 'running' : 'stopped');
+          let dot;
+          if (st === 'running')      dot = '<span class="dot running">运行中</span>';
+          else if (st === 'stale')   dot = '<span class="dot stale">假活</span>';
+          else                       dot = '<span class="dot stopped">已停止</span>';
           const pid = info.pid ? `<span class="meta">PID ${info.pid}</span>` : '';
           const statusExtra = info.status ? `<span class="meta">${info.status}</span>` : '';
           const alias = info.alias || '';
